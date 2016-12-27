@@ -1,57 +1,59 @@
-_homebrew-installed() {
-  type brew &> /dev/null
-}
+#
+# Configures Ruby local gem installation, loads version managers, and defines
+# aliases.
+#
+# Authors: Sorin Ionescu <sorin.ionescu@gmail.com>
+#
 
-FOUND_RBENV=0
-rbenvdirs=("$HOME/.rbenv" "/usr/local/rbenv" "/opt/rbenv" "/usr/local/opt/rbenv")
-if _homebrew-installed && rbenv_homebrew_path=$(brew --prefix rbenv 2>/dev/null); then
-    rbenvdirs=($rbenv_homebrew_path "${rbenvdirs[@]}")
-    unset rbenv_homebrew_path
+# Load manually installed rbenv into the shell session.
+if [[ -s "$HOME/.rbenv/bin/rbenv" ]]; then
+  path=("$HOME/.rbenv/bin" $path)
+  eval "$(rbenv init - --no-rehash zsh)"
+
+# Load package manager installed rbenv into the shell session.
+elif (( $+commands[rbenv] )); then
+  eval "$(rbenv init - --no-rehash zsh)"
+
+# Load package manager installed chruby into the shell session.
+elif (( $+commands[chruby-exec] )); then
+  source "${commands[chruby-exec]:h:h}/share/chruby/chruby.sh"
+  if zstyle -t ':prezto:module:ruby:chruby' auto-switch; then
+    source "${commands[chruby-exec]:h:h}/share/chruby/auto.sh"
+
+    # If a default Ruby is set, switch to it.
+    chruby_auto
+  fi
+
+# Prepend local gems bin directories to PATH.
+else
+  path=($HOME/.gem/ruby/*/bin(N) $path)
 fi
 
-for rbenvdir in "${rbenvdirs[@]}" ; do
-  if [ -d $rbenvdir/bin -a $FOUND_RBENV -eq 0 ] ; then
-    FOUND_RBENV=1
-    if [[ $RBENV_ROOT = '' ]]; then
-      RBENV_ROOT=$rbenvdir
-    fi
-    export RBENV_ROOT
-    export PATH=${rbenvdir}/bin:$PATH
-    eval "$(rbenv init --no-rehash - zsh)"
+# Return if requirements are not found.
+if (( ! $+commands[ruby] && ! $+commands[rbenv] )); then
+  return 1
+fi
 
-    alias rubies="rbenv versions"
-    alias gemsets="rbenv gemset list"
+#
+# Aliases
+#
 
-    function current_ruby() {
-      echo "$(rbenv version-name)"
-    }
+# General
+alias rb='ruby'
 
-    function current_gemset() {
-      echo "$(rbenv gemset active 2&>/dev/null | sed -e ":a" -e '$ s/\n/+/gp;N;b a' | head -n1)"
-    }
-
-    function gems {
-      local rbenv_path=$(rbenv prefix)
-      gem list $@ | sed -E \
-        -e "s/\([0-9a-z, \.]+( .+)?\)/$fg[blue]&$reset_color/g" \
-        -e "s|$(echo $rbenv_path)|$fg[magenta]\$rbenv_path$reset_color|g" \
-        -e "s/$current_ruby@global/$fg[yellow]&$reset_color/g" \
-        -e "s/$current_ruby$current_gemset$/$fg[green]&$reset_color/g"
-    }
-
-    function rbenv_prompt_info() {
-      if [[ -n $(current_gemset) ]] ; then
-        echo "$(current_ruby)@$(current_gemset)"
-      else
-        echo "$(current_ruby)"
-      fi
-    }
-  fi
-done
-unset rbenvdir
-
-if [ $FOUND_RBENV -eq 0 ] ; then
-  alias rubies='ruby -v'
-  function gemsets() { echo 'not supported' }
-  function rbenv_prompt_info() { echo "system: $(ruby -v | cut -f-2 -d ' ')" }
+# Bundler
+if (( $+commands[bundle] )); then
+  alias rbb='bundle'
+  alias rbbe='bundle exec'
+  alias rbbi='bundle install --path vendor/bundle'
+  alias rbbl='bundle list'
+  alias rbbo='bundle open'
+  alias rbbp='bundle package'
+  alias rbbu='bundle update'
+  alias rbbI='rbbi \
+    && bundle package \
+    && print .bundle       >>! .gitignore \
+    && print vendor/assets >>! .gitignore \
+    && print vendor/bundle >>! .gitignore \
+    && print vendor/cache  >>! .gitignore'
 fi
